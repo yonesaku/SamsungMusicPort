@@ -3,7 +3,7 @@ name: Build SamsungMusicPort APK
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # lets you trigger it manually from GitHub's website
+  workflow_dispatch:
 
 jobs:
   build:
@@ -19,33 +19,15 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Download apktool
+      - name: Download apktool 3.0.1
         run: |
-          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -O apktool.jar
-          wget -q https://raw.githubusercontent.com/iBotPeaches/Apktool/master/scripts/linux/apktool -O apktool
-          chmod +x apktool
-
-      - name: Move overflow smali classes to classes2
-        run: |
-          # The main smali folder exceeds DEX 65535 method limit.
-          # Move android/arch and android/support overflow into smali_classes2
-          # so apktool puts them in a separate DEX file.
-          mkdir -p smali_classes2/android/arch
-          if [ -d "smali/android/arch" ]; then
-            cp -rn smali/android/arch/. smali_classes2/android/arch/
-            rm -rf smali/android/arch
-          fi
-          mkdir -p smali_classes2/android/support
-          if [ -d "smali/android/support" ]; then
-            cp -rn smali/android/support/. smali_classes2/android/support/
-            rm -rf smali/android/support
-          fi
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -O apktool.jar
 
       - name: Build APK with apktool
         run: |
-          java -Xmx2g -jar apktool.jar b -f --use-aapt2 -o SamsungMusicPort-unsigned.apk .
+          java -Xmx2g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
 
-      - name: Generate debug keystore (for signing)
+      - name: Generate debug keystore
         run: |
           keytool -genkey -v \
             -keystore debug.keystore \
@@ -67,12 +49,10 @@ jobs:
             -storepass android \
             -keypass android \
             SamsungMusicPort-unsigned.apk androiddebugkey
-
           mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
 
       - name: Zipalign APK
         run: |
-          # zipalign comes with Android build tools; grab it from the SDK
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
             SamsungMusicPort-signed.apk \
             SamsungMusicPort.apk
