@@ -338,6 +338,11 @@
 
     move-result v1
 
+    # Trigger file-based scan as fallback alongside MediaStore sync
+    invoke-virtual {p0}, Landroid/app/Service;->getApplicationContext()Landroid/content/Context;
+    move-result-object v3
+    invoke-static {v3}, Lcom/samsung/android/app/musiclibrary/scanner/FileScannerManager;->getAudioFiles(Landroid/content/Context;)Ljava/util/Map;
+
     const/4 v3, 0x0
 
     if-eqz v1, :cond_2
