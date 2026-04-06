@@ -23,6 +23,26 @@ jobs:
         run: |
           wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -O apktool.jar
 
+      - name: Remove unresolvable public.xml entries
+        run: |
+          # Remove references to missing anim resources that cause aapt2 to fail
+          python3 - << 'PYEOF'
+          import re, os
+          path = "res/values/public.xml"
+          if not os.path.exists(path):
+              print("public.xml not found, skipping")
+              exit()
+          with open(path, "r") as f:
+              content = f.read()
+          # Remove lines referencing anim resources that don't exist
+          cleaned = re.sub(r'\s*<public[^/]*/>\s*\n', '\n', content)
+          # More targeted: remove lines with type="anim"
+          cleaned = re.sub(r'.*type="anim".*\n', '', content)
+          with open(path, "w") as f:
+              f.write(cleaned)
+          print("Cleaned public.xml")
+          PYEOF
+
       - name: Build APK with apktool
         run: |
           java -Xmx2g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
