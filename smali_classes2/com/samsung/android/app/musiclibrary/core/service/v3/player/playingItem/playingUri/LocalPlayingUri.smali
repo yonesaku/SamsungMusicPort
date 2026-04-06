@@ -104,16 +104,41 @@
 .end method
 
 .method public getPlayingUri(I)Landroid/net/Uri;
-    .locals 1
+    .locals 2
 
     .line 17
+    # First try to build a file:// URI from the path field directly
+    iget-object v0, p0, Lcom/samsung/android/app/musiclibrary/core/service/v3/player/playingItem/playingUri/LocalPlayingUri;->path:Ljava/lang/String;
+
+    if-eqz v0, :use_mediastore
+
+    # Check if the file actually exists at that path
+    new-instance v1, Ljava/io/File;
+    invoke-direct {v1, v0}, Ljava/io/File;-><init>(Ljava/lang/String;)V
+    invoke-virtual {v1}, Ljava/io/File;->exists()Z
+    move-result v1
+
+    if-eqz v1, :use_mediastore
+
+    # Build a file:// URI from the path
+    invoke-static {v0}, Landroid/net/Uri;->fromFile(Ljava/io/File;)Landroid/net/Uri;
+
+    # fromFile takes a File, so we need the File object — redo properly:
+    new-instance v1, Ljava/io/File;
+    invoke-direct {v1, v0}, Ljava/io/File;-><init>(Ljava/lang/String;)V
+    invoke-static {v1}, Landroid/net/Uri;->fromFile(Ljava/io/File;)Landroid/net/Uri;
+    move-result-object p1
+
+    return-object p1
+
+    :use_mediastore
+    .line 18
     sget-object p1, Landroid/provider/MediaStore$Audio$Media;->EXTERNAL_CONTENT_URI:Landroid/net/Uri;
 
     invoke-virtual {p1}, Landroid/net/Uri;->buildUpon()Landroid/net/Uri$Builder;
 
     move-result-object p1
 
-    .line 18
     iget-object v0, p0, Lcom/samsung/android/app/musiclibrary/core/service/v3/player/playingItem/playingUri/LocalPlayingUri;->sourceId:Ljava/lang/String;
 
     invoke-virtual {p1, v0}, Landroid/net/Uri$Builder;->appendPath(Ljava/lang/String;)Landroid/net/Uri$Builder;
@@ -129,26 +154,4 @@
     invoke-static {p1, v0}, Lkotlin/jvm/internal/Intrinsics;->a(Ljava/lang/Object;Ljava/lang/String;)V
 
     return-object p1
-.end method
-
-.method public makeCache(J)V
-    .locals 0
-
-    .line 8
-    invoke-static {p0, p1, p2}, Lcom/samsung/android/app/musiclibrary/core/service/v3/player/playingItem/playingUri/PlayingUri$DefaultImpls;->makeCache(Lcom/samsung/android/app/musiclibrary/core/service/v3/player/playingItem/playingUri/PlayingUri;J)V
-
-    return-void
-.end method
-
-.method public reset()V
-    .locals 2
-
-    .line 27
-    sget-object v0, Lcom/samsung/android/app/musiclibrary/core/service/v3/player/playingItem/playingUri/LocalPlayingUri;->Companion:Lcom/samsung/android/app/musiclibrary/core/service/v3/player/playingItem/playingUri/LocalPlayingUri$Companion;
-
-    const-string v1, "reset"
-
-    invoke-static {v0, v1}, Lcom/samsung/android/app/musiclibrary/core/service/v3/player/playingItem/playingUri/LocalPlayingUri$Companion;->access$printLog(Lcom/samsung/android/app/musiclibrary/core/service/v3/player/playingItem/playingUri/LocalPlayingUri$Companion;Ljava/lang/String;)V
-
-    return-void
 .end method
