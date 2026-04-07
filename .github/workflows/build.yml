@@ -42,11 +42,14 @@ jobs:
 
       - name: Build APK with apktool
         run: |
-          # We find the path to the legacy aapt binary in the Android SDK
+          # Find the legacy aapt binary
           AAPT_PATH=$(find ${ANDROID_HOME}/build-tools -name aapt | head -n 1)
-          echo "Using AAPT at: $AAPT_PATH"
+          echo "Found AAPT at: $AAPT_PATH"
           
-          # Using --aapt pointing to the legacy binary often fixes Samsung resource errors
+          # Fix the permission error by making it executable
+          sudo chmod +x "$AAPT_PATH"
+          
+          # Build using the explicit aapt binary path
           java -Xmx2g -jar apktool.jar b -v --aapt "$AAPT_PATH" -f -o SamsungMusicPort-unsigned.apk .
 
       - name: Generate debug keystore
