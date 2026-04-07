@@ -62,48 +62,70 @@ jobs:
           rm -rf build/ dist/ *.apk *.keystore *.jks
           echo "Build artifacts cleaned"
 
-      - name: Remove problematic resource declarations
+      - name: Remove problematic resource files
         run: |
-          echo "Checking resource files..."
+          echo "Removing problematic resource declarations..."
           
-          # Remove public.xml as it contains orphaned resource declarations
-          if [ -f "res/values/public.xml" ]; then
-            echo "Removing res/values/public.xml (orphaned declarations)..."
-            rm -f res/values/public.xml
+          # Remove public.xml
+          rm -f res/values/public.xml
+          
+          # Remove ids.xml
+          rm -f res/values/ids.xml
+          
+          # Remove attr.xml (can cause issues)
+          rm -f res/values/attr.xml
+          
+          # List what remains
+          echo "Resource files after cleanup:"
+          find res/values* -type f -name "*.xml" 2>/dev/null | wc -l
+
+      - name: Validate AndroidManifest.xml
+        run: |
+          echo "Validating AndroidManifest.xml..."
+          if [ ! -f "AndroidManifest.xml" ]; then
+            echo "ERROR: AndroidManifest.xml not found!"
+            exit 1
           fi
           
-          # Remove ids.xml if it exists (can cause similar issues)
-          if [ -f "res/values/ids.xml" ]; then
-            echo "Removing res/values/ids.xml..."
-            rm -f res/values/ids.xml
-          fi
+          # Check for obvious issues
+          head -20 AndroidManifest.xml
+          echo "..."
+          tail -5 AndroidManifest.xml
+
+      - name: Build APK with Apktool (with AAPT2 debug)
+        run: |
+          echo "Starting APK build..."
           
-          echo "Resource cleanup completed"
-
-      - name: List remaining resource files
-        run: |
-          echo "Remaining resource files:"
-          find res/values* -type f -name "*.xml" 2>/dev/null | head -20 || echo "No resource files found"
-
-      - name: Build APK with Apktool
-        run: |
-          echo "Starting APK build with Samsung framework..."
+          # Set environment to show more AAPT2 details
+          export JAVA_TOOL_OPTIONS="-Dapktool.aapt2.debug=true"
+          
           java -Xmx4g -jar apktool.jar b \
             -f \
             -v \
             -o SamsungMusicPort-unsigned.apk \
-            .
+            . 2>&1 | tee build.log
+          
+          BUILD_STATUS=${PIPESTATUS[0]}
+          
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo ""
+            echo "=== BUILD FAILED - Showing last 100 lines of log ==="
+            tail -100 build.log
+            exit $BUILD_STATUS
+          fi
           
           echo "APK build completed successfully!"
           ls -lh SamsungMusicPort-unsigned.apk
 
       - name: Verify APK
+        if: success()
         run: |
           echo "Verifying APK integrity..."
           file SamsungMusicPort-unsigned.apk
-          unzip -t SamsungMusicPort-unsigned.apk > /dev/null 2>&1 && echo "✓ APK is valid" || echo "✗ APK validation failed"
+          unzip -l SamsungMusicPort-unsigned.apk | head -30
 
       - name: Generate debug keystore
+        if: success()
         run: |
           echo "Generating debug keystore..."
           keytool -genkey -v \
@@ -117,6 +139,7 @@ jobs:
             -dname "CN=Android Debug,O=Android,C=US"
 
       - name: Sign APK
+        if: success()
         run: |
           echo "Signing APK with debug key..."
           jarsigner \
@@ -132,6 +155,7 @@ jobs:
           ls -lh SamsungMusicPort-signed.apk
 
       - name: Zipalign APK
+        if: success()
         run: |
           echo "Zipaligning APK for optimization..."
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
@@ -142,19 +166,10 @@ jobs:
           ls -lh SamsungMusicPort.apk
 
       - name: Verify Zipalign
+        if: success()
         run: |
           echo "Verifying zipalign..."
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -c -v 4 SamsungMusicPort.apk
-
-      - name: Generate APK info
-        if: success()
-        run: |
-          echo "=== APK Build Summary ===" > apk_info.txt
-          echo "File: SamsungMusicPort.apk" >> apk_info.txt
-          ls -lh SamsungMusicPort.apk | awk '{print "Size: " $5}' >> apk_info.txt
-          echo "Build: $(date)" >> apk_info.txt
-          echo "Commit: ${{ github.sha }}" >> apk_info.txt
-          cat apk_info.txt
 
       - name: Upload APK as artifact
         if: success()
@@ -163,6 +178,14 @@ jobs:
           name: SamsungMusicPort-APK
           path: SamsungMusicPort.apk
           retention-days: 30
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
 
       - name: Create GitHub Release
         if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -177,19 +200,18 @@ jobs:
             - Build Number: ${{ github.run_number }}
             - Commit: ${{ github.sha }}
             - Branch: main
-            - Date: $(date)
             
             **Build System:**
             - Apktool: 3.0.1
             - Java: 17 (Temurin)
-            - Framework: Samsung framework-res.apk (SamsungFirmware/1.apk)
+            - Framework: Samsung (SamsungFirmware/1.apk)
             
             **APK Details:**
             - Package: com.sec.android.app.music
             - Min SDK: 23
             - Target SDK: 30
             
-            Download the APK file attached below to install on your device.
+            Download the APK file to install on your device.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -204,9 +226,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f SamsungMusicPort.apk ]; then
             SIZE=$(ls -lh SamsungMusicPort.apk | awk '{print $5}')
-            echo "**APK Built Successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "**✓ APK Built Successfully!**" >> $GITHUB_STEP_SUMMARY
             echo "- **Filename:** SamsungMusicPort.apk" >> $GITHUB_STEP_SUMMARY
             echo "- **Size:** $SIZE" >> $GITHUB_STEP_SUMMARY
           else
-            echo "**Build Failed** - APK not generated" >> $GITHUB_STEP_SUMMARY
+            echo "**✗ Build Failed**" >> $GITHUB_STEP_SUMMARY
+            if [ -f build.log ]; then
+              echo "Check the build log artifact for details" >> $GITHUB_STEP_SUMMARY
+            fi
           fi
