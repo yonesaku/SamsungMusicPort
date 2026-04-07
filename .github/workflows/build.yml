@@ -31,13 +31,22 @@ jobs:
 
       - name: Remove problematic resource files
         run: |
+          echo "Removing resource declaration files..."
           rm -f res/values/public.xml
           rm -f res/values/ids.xml
           rm -f res/values/attr.xml
+          
+          echo "Removing files with missing resource references..."
+          rm -f res/values/drawables.xml
+          rm -f res/values-land-night/colors.xml
+          
+          echo "Removing locale-specific files with missing defaults..."
           rm -f res/values-mg/strings.xml
           rm -f res/values-xh/strings.xml
           rm -f res/values-am/strings.xml
           rm -f res/values-hy/strings.xml
+          
+          echo "✓ Problematic files removed"
 
       - name: Fix broken style references
         run: |
@@ -62,7 +71,9 @@ jobs:
 
       - name: Build APK
         run: |
+          echo "Building APK with Apktool 3.0.1..."
           java -Xmx4g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
+          echo "✓ APK build completed"
           ls -lh SamsungMusicPort-unsigned.apk
 
       - name: Generate keystore
@@ -89,12 +100,14 @@ jobs:
             SamsungMusicPort-unsigned.apk androiddebugkey
           
           mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
+          echo "✓ APK signed"
 
       - name: Zipalign APK
         run: |
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
             SamsungMusicPort-signed.apk \
             SamsungMusicPort.apk
+          echo "✓ APK aligned"
 
       - name: Verify APK
         run: |
@@ -116,19 +129,28 @@ jobs:
           tag_name: build-${{ github.run_number }}
           body: |
             # SamsungMusicPort Build #${{ github.run_number }}
-            - Apktool: 3.0.1
+            
+            **Build Details:**
+            - Build #: ${{ github.run_number }}
             - Commit: ${{ github.sha }}
-            - Status: ✅ Built successfully
+            - Apktool: 3.0.1
+            - Java: 17 Temurin
+            - Status: ✅ Success
+            
+            **Installation:**
+            Download the APK and install on your Android device (API 23+)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Summary
         if: always()
         run: |
+          echo ""
           if [ -f SamsungMusicPort.apk ]; then
             SIZE=$(ls -lh SamsungMusicPort.apk | awk '{print $5}')
             echo "✅ BUILD SUCCESSFUL!"
-            echo "APK Size: $SIZE"
+            echo "Filename: SamsungMusicPort.apk"
+            echo "Size: $SIZE"
           else
-            echo "❌ BUILD FAILED"
+            echo "❌ BUILD FAILED - APK not created"
           fi
