@@ -30,11 +30,11 @@ jobs:
 
       - name: Install Samsung Framework
         run: |
-          # Clean existing framework cache to prevent conflicts
+          # Clean existing framework cache
           mkdir -p $HOME/.local/share/apktool/framework/
           rm -f $HOME/.local/share/apktool/framework/*.apk
           
-          echo "Installing Samsung framework from repository..."
+          echo "Installing Samsung framework..."
           java -jar apktool.jar if SamsungFirmware/1.apk
 
       - name: Remove problematic public.xml
@@ -42,9 +42,12 @@ jobs:
 
       - name: Build APK with apktool
         run: |
-          # --use-aapt1 is used here to handle Samsung's non-standard resource tables
-          # -v (verbose) is added so you can see exactly where it fails if an error occurs
-          java -Xmx2g -jar apktool.jar b -v --use-aapt1 -f -o SamsungMusicPort-unsigned.apk .
+          # We find the path to the legacy aapt binary in the Android SDK
+          AAPT_PATH=$(find ${ANDROID_HOME}/build-tools -name aapt | head -n 1)
+          echo "Using AAPT at: $AAPT_PATH"
+          
+          # Using --aapt pointing to the legacy binary often fixes Samsung resource errors
+          java -Xmx2g -jar apktool.jar b -v --aapt "$AAPT_PATH" -f -o SamsungMusicPort-unsigned.apk .
 
       - name: Generate debug keystore
         run: |
