@@ -32,13 +32,18 @@ jobs:
 
       - name: Remove problematic resource files
         run: |
-          echo "Removing problematic resource declaration files..."
+          echo "Removing files with broken resource references..."
+          
+          # Remove resource declaration files
           rm -f res/values/public.xml
           rm -f res/values/ids.xml
           rm -f res/values/attr.xml
           
-          # Remove locale-specific files that have strings missing from default strings.xml
-          echo "Removing locale files with missing string definitions..."
+          # Remove files with missing drawable/color references
+          rm -f res/values/drawables.xml
+          rm -f res/values-land-night/colors.xml
+          
+          # Remove locale files with missing string definitions
           rm -f res/values-mg/strings.xml
           rm -f res/values-xh/strings.xml
           rm -f res/values-am/strings.xml
@@ -105,5 +110,17 @@ jobs:
             # SamsungMusicPort Build #${{ github.run_number }}
             - Apktool: 3.0.1
             - Commit: ${{ github.sha }}
+            - Status: ✅ Built successfully
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f SamsungMusicPort.apk ]; then
+            SIZE=$(ls -lh SamsungMusicPort.apk | awk '{print $5}')
+            echo "✅ BUILD SUCCESSFUL!"
+            echo "APK Size: $SIZE"
+          else
+            echo "❌ BUILD FAILED"
+          fi
