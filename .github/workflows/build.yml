@@ -1,4 +1,4 @@
-name: Build SamsungMusicPort APK
+name: Build Samsung Music Port
 
 on:
   push:
@@ -10,86 +10,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup JDK 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Download Apktool 3.0.1
+      - name: Install Frameworks
         run: |
-          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -O apktool.jar
-
-      - name: Install Samsung Framework
-        run: |
-          mkdir -p ~/.local/share/apktool/framework
+          # Install the standard Android framework (optional but recommended)
+          # java -jar apktool.jar if framework-res.apk 
+          
+          # Install your specific Samsung framework
           java -jar apktool.jar if SamsungFirmware/1.apk
-
-      - name: Remove problematic resource files
-        run: |
-          rm -f res/values/public.xml
-          rm -f res/values/ids.xml
-          rm -f res/values/attr.xml
-          rm -f res/values/drawables.xml
-          rm -f res/values-land-night/colors.xml
-          rm -f res/values-mg/strings.xml
-          rm -f res/values-xh/strings.xml
-          rm -f res/values-am/strings.xml
-          rm -f res/values-hy/strings.xml
-          # Remove styles.xml since it references missing m3/design resources
-          rm -f res/values/styles.xml
-          echo "Done removing problematic files"
+          
+          # If you have other frameworks in that folder, install them all:
+          # for file in SamsungFirmware/*.apk; do java -jar apktool.jar if "$file"; done
 
       - name: Build APK
         run: |
           java -Xmx4g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
 
-      - name: Generate keystore
-        run: |
-          keytool -genkey -v \
-            -keystore debug.keystore \
-            -alias androiddebugkey \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass android \
-            -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US"
-
-      - name: Sign APK
-        run: |
-          jarsigner \
-            -verbose \
-            -sigalg SHA256withRSA \
-            -digestalg SHA-256 \
-            -keystore debug.keystore \
-            -storepass android \
-            -keypass android \
-            SamsungMusicPort-unsigned.apk androiddebugkey
-          mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
-
-      - name: Zipalign APK
-        run: |
-          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
-            SamsungMusicPort-signed.apk \
-            SamsungMusicPort.apk
-
-      - name: Upload APK
+      - name: Upload Unsigned APK
         uses: actions/upload-artifact@v4
         with:
-          name: SamsungMusicPort-APK
-          path: SamsungMusicPort.apk
-          retention-days: 30
-
-      - name: Create Release
-        if: success()
-        uses: softprops/action-gh-release@v1
-        with:
-          files: SamsungMusicPort.apk
-          tag_name: build-${{ github.run_number }}
-          body: "Build #${{ github.run_number }}"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: SamsungMusicPort-unsigned
+          path: SamsungMusicPort-unsigned.apk
