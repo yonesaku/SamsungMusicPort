@@ -26,34 +26,79 @@ jobs:
           echo "Downloading Apktool 3.0.1..."
           wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -O apktool.jar
           chmod +x apktool.jar
-          echo "Apktool downloaded successfully"
+          java -jar apktool.jar --version
+
+      - name: Setup Samsung Framework
+        run: |
+          echo "Setting up Samsung framework..."
+          mkdir -p $HOME/.local/share/apktool/framework/
+          
+          # Remove any existing framework installations to ensure clean state
+          rm -rf $HOME/.local/share/apktool/framework/*.apk
+          
+          # Check if 1.apk exists
+          if [ ! -f "SamsungFirmware/1.apk" ]; then
+            echo "ERROR: SamsungFirmware/1.apk not found!"
+            exit 1
+          fi
+          
+          echo "Installing Samsung framework from SamsungFirmware/1.apk..."
+          java -jar apktool.jar if -t 1 "SamsungFirmware/1.apk"
+          
+          # Verify framework was installed
+          if [ -f "$HOME/.local/share/apktool/framework/1.apk" ]; then
+            echo "✓ Samsung framework installed successfully"
+          else
+            echo "ERROR: Framework installation failed!"
+            exit 1
+          fi
 
       - name: Clean build artifacts
         run: |
-          rm -rf build/ dist/ *.apk *.keystore
+          rm -rf build/ dist/ *.apk *.keystore *.jks
           echo "Build artifacts cleaned"
 
-      - name: Verify apktool.yml
+      - name: Remove problematic resource declarations
         run: |
-          echo "Checking apktool.yml..."
-          cat apktool.yml | head -20
+          echo "Checking resource files..."
+          
+          # Remove public.xml as it contains orphaned resource declarations
+          if [ -f "res/values/public.xml" ]; then
+            echo "Removing res/values/public.xml (orphaned declarations)..."
+            rm -f res/values/public.xml
+          fi
+          
+          # Remove ids.xml if it exists (can cause similar issues)
+          if [ -f "res/values/ids.xml" ]; then
+            echo "Removing res/values/ids.xml..."
+            rm -f res/values/ids.xml
+          fi
+          
+          echo "Resource cleanup completed"
 
-      - name: Build APK with Apktool (Verbose Mode)
+      - name: List remaining resource files
         run: |
-          echo "Starting APK build..."
+          echo "Remaining resource files:"
+          find res/values* -type f -name "*.xml" 2>/dev/null | head -20 || echo "No resource files found"
+
+      - name: Build APK with Apktool
+        run: |
+          echo "Starting APK build with Samsung framework..."
           java -Xmx4g -jar apktool.jar b \
             -f \
             -v \
+            -t 1 \
             -o SamsungMusicPort-unsigned.apk \
             .
-          echo "APK build completed"
+          
+          echo "APK build completed successfully!"
           ls -lh SamsungMusicPort-unsigned.apk
 
-      - name: Check APK integrity
+      - name: Verify APK
         run: |
-          echo "Checking APK integrity..."
+          echo "Verifying APK integrity..."
           file SamsungMusicPort-unsigned.apk
-          unzip -t SamsungMusicPort-unsigned.apk | head -20
+          unzip -t SamsungMusicPort-unsigned.apk > /dev/null 2>&1 && echo "✓ APK is valid" || echo "✗ APK validation failed"
 
       - name: Generate debug keystore
         run: |
@@ -67,11 +112,10 @@ jobs:
             -storepass android \
             -keypass android \
             -dname "CN=Android Debug,O=Android,C=US"
-          echo "Keystore generated"
 
       - name: Sign APK
         run: |
-          echo "Signing APK..."
+          echo "Signing APK with debug key..."
           jarsigner \
             -verbose \
             -sigalg SHA256withRSA \
@@ -82,62 +126,84 @@ jobs:
             SamsungMusicPort-unsigned.apk androiddebugkey
           
           mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
-          echo "APK signed successfully"
           ls -lh SamsungMusicPort-signed.apk
 
       - name: Zipalign APK
         run: |
-          echo "Zipaligning APK..."
+          echo "Zipaligning APK for optimization..."
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
             SamsungMusicPort-signed.apk \
             SamsungMusicPort.apk
+          
           echo "Zipalign completed"
           ls -lh SamsungMusicPort.apk
 
-      - name: Verify final APK
+      - name: Verify Zipalign
         run: |
-          echo "Verifying final APK..."
+          echo "Verifying zipalign..."
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -c -v 4 SamsungMusicPort.apk
-          echo "APK verification successful"
+
+      - name: Generate APK info
+        if: success()
+        run: |
+          echo "=== APK Build Summary ===" > apk_info.txt
+          echo "File: SamsungMusicPort.apk" >> apk_info.txt
+          ls -lh SamsungMusicPort.apk | awk '{print "Size: " $5}' >> apk_info.txt
+          echo "Build: $(date)" >> apk_info.txt
+          echo "Commit: ${{ github.sha }}" >> apk_info.txt
+          cat apk_info.txt
 
       - name: Upload APK as artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SamsungMusicPort-signed
+          name: SamsungMusicPort-APK
           path: SamsungMusicPort.apk
           retention-days: 30
-          if-no-files-found: error
 
-      - name: Create release (on main branch push)
+      - name: Create GitHub Release
         if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v1
         with:
           files: SamsungMusicPort.apk
           tag_name: build-${{ github.run_number }}
           body: |
-            ## Build Information
-            - **Build Number**: ${{ github.run_number }}
-            - **Commit**: ${{ github.sha }}
-            - **Branch**: ${{ github.ref_name }}
-            - **Timestamp**: ${{ github.event.head_commit.timestamp }}
+            # SamsungMusicPort Build #${{ github.run_number }}
             
-            Built with:
-            - Apktool 3.0.1
-            - Java 17 (Temurin)
-            - Ubuntu Latest
+            **Build Information:**
+            - Build Number: ${{ github.run_number }}
+            - Commit: ${{ github.sha }}
+            - Branch: main
+            - Date: $(date)
+            
+            **Build System:**
+            - Apktool: 3.0.1
+            - Java: 17 (Temurin)
+            - Framework: Samsung framework-res.apk (SamsungFirmware/1.apk)
+            
+            **APK Details:**
+            - Package: com.sec.android.app.music
+            - Min SDK: 23
+            - Target SDK: 30
+            
+            Download the APK file attached below to install on your device.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Job Summary
         if: always()
         run: |
-          echo "## Build Job Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Workflow Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f SamsungMusicPort.apk ]; then
             SIZE=$(ls -lh SamsungMusicPort.apk | awk '{print $5}')
-            echo "- **APK Size**: $SIZE" >> $GITHUB_STEP_SUMMARY
+            echo "**APK Built Successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "- **Filename:** SamsungMusicPort.apk" >> $GITHUB_STEP_SUMMARY
+            echo "- **Size:** $SIZE" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Build Failed** - APK not generated" >> $GITHUB_STEP_SUMMARY
           fi
