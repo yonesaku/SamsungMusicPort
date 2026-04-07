@@ -30,8 +30,11 @@ jobs:
 
       - name: Install Samsung Framework
         run: |
+          # Clean existing framework cache to prevent conflicts
+          mkdir -p $HOME/.local/share/apktool/framework/
+          rm -f $HOME/.local/share/apktool/framework/*.apk
+          
           echo "Installing Samsung framework from repository..."
-          # This installs the framework so apktool can resolve Samsung-specific resources
           java -jar apktool.jar if SamsungFirmware/1.apk
 
       - name: Remove problematic public.xml
@@ -39,8 +42,9 @@ jobs:
 
       - name: Build APK with apktool
         run: |
-          # Increased memory (Xmx2g) to ensure the build doesn't crash
-          java -Xmx2g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
+          # --use-aapt1 is used here to handle Samsung's non-standard resource tables
+          # -v (verbose) is added so you can see exactly where it fails if an error occurs
+          java -Xmx2g -jar apktool.jar b -v --use-aapt1 -f -o SamsungMusicPort-unsigned.apk .
 
       - name: Generate debug keystore
         run: |
@@ -68,7 +72,6 @@ jobs:
 
       - name: Zipalign APK
         run: |
-          # Uses the built-in Android SDK path in GitHub Actions
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
             SamsungMusicPort-signed.apk \
             SamsungMusicPort.apk
