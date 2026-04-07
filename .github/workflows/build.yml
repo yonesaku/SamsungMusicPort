@@ -69,7 +69,7 @@ jobs:
 
       - name: Build APK with apktool
         run: |
-         java -Xmx2g -jar apktool.jar b -f -p SamsungFirmware -o SamsungMusicPort-unsigned.apk .
+          java -Xmx2g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
 
       - name: Generate debug keystore
         run: |
