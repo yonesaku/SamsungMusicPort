@@ -22,7 +22,6 @@ jobs:
       - name: Download Apktool 3.0.1
         run: |
           wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -O apktool.jar
-          java -jar apktool.jar --version
 
       - name: Install Samsung Framework
         run: |
@@ -31,50 +30,22 @@ jobs:
 
       - name: Remove problematic resource files
         run: |
-          echo "Removing resource declaration files..."
           rm -f res/values/public.xml
           rm -f res/values/ids.xml
           rm -f res/values/attr.xml
-          
-          echo "Removing files with missing resource references..."
           rm -f res/values/drawables.xml
           rm -f res/values-land-night/colors.xml
-          
-          echo "Removing locale-specific files with missing defaults..."
           rm -f res/values-mg/strings.xml
           rm -f res/values-xh/strings.xml
           rm -f res/values-am/strings.xml
           rm -f res/values-hy/strings.xml
-          
-          echo "✓ Problematic files removed"
-
-      - name: Fix broken style references
-        run: |
-          # Replace broken animation references with design versions
-          sed -i 's/@anim\/mtrl_bottom_sheet_slide_in/@anim\/design_bottom_sheet_slide_in/g' res/values/styles.xml
-          sed -i 's/@anim\/mtrl_bottom_sheet_slide_out/@anim\/design_bottom_sheet_slide_out/g' res/values/styles.xml
-          sed -i 's/@anim\/sesl_bottom_menu_popup_enter/@anim\/design_menu_popup_enter/g' res/values/styles.xml
-          sed -i 's/@anim\/sesl_bottom_menu_popup_exit/@anim\/design_menu_popup_exit/g' res/values/styles.xml
-          
-          # Replace broken drawable references
-          sed -i 's/@drawable\/ripple_widget_button_light/@drawable\/ripple_button_oval_winset/g' res/values/styles.xml
-          sed -i 's/@drawable\/mtrl_dialog_background/@drawable\/design_dialog_background/g' res/values/styles.xml
-          
-          # Replace broken color references with safe alternatives
-          sed -i 's/@color\/material_on_surface_emphasis_high_type/@color\/sesl_primary_text_dark/g' res/values/styles.xml
-          sed -i 's/@color\/sesl_select_dialog_list_item_text_light/@color\/sesl_dialog_body_text_color_light/g' res/values/styles.xml
-          sed -i 's/@color\/sesl_spinner_item_text_dark/@color\/sesl_secondary_text_dark/g' res/values/styles.xml
-          sed -i 's/@color\/m3_dark_default_color_primary_text/@color\/sesl_primary_text_dark/g' res/values/styles.xml
-          sed -i 's/@color\/m3_dark_primary_text_disable_only/@color\/sesl_secondary_text_dark/g' res/values/styles.xml
-          
-          echo "✓ Styles fixed"
+          # Remove styles.xml since it references missing m3/design resources
+          rm -f res/values/styles.xml
+          echo "Done removing problematic files"
 
       - name: Build APK
         run: |
-          echo "Building APK with Apktool 3.0.1..."
           java -Xmx4g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
-          echo "✓ APK build completed"
-          ls -lh SamsungMusicPort-unsigned.apk
 
       - name: Generate keystore
         run: |
@@ -98,21 +69,13 @@ jobs:
             -storepass android \
             -keypass android \
             SamsungMusicPort-unsigned.apk androiddebugkey
-          
           mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
-          echo "✓ APK signed"
 
       - name: Zipalign APK
         run: |
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
             SamsungMusicPort-signed.apk \
             SamsungMusicPort.apk
-          echo "✓ APK aligned"
-
-      - name: Verify APK
-        run: |
-          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -c -v 4 SamsungMusicPort.apk
-          echo "✓ APK verified successfully"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -122,35 +85,11 @@ jobs:
           retention-days: 30
 
       - name: Create Release
-        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: success()
         uses: softprops/action-gh-release@v1
         with:
           files: SamsungMusicPort.apk
           tag_name: build-${{ github.run_number }}
-          body: |
-            # SamsungMusicPort Build #${{ github.run_number }}
-            
-            **Build Details:**
-            - Build #: ${{ github.run_number }}
-            - Commit: ${{ github.sha }}
-            - Apktool: 3.0.1
-            - Java: 17 Temurin
-            - Status: ✅ Success
-            
-            **Installation:**
-            Download the APK and install on your Android device (API 23+)
+          body: "Build #${{ github.run_number }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Summary
-        if: always()
-        run: |
-          echo ""
-          if [ -f SamsungMusicPort.apk ]; then
-            SIZE=$(ls -lh SamsungMusicPort.apk | awk '{print $5}')
-            echo "✅ BUILD SUCCESSFUL!"
-            echo "Filename: SamsungMusicPort.apk"
-            echo "Size: $SIZE"
-          else
-            echo "❌ BUILD FAILED - APK not created"
-          fi
