@@ -19,19 +19,25 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Download Apktool
+        run: |
+          # Get the latest Apktool JAR from GitHub
+          curl -L https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -o apktool.jar
+          chmod +x apktool.jar
+
       - name: Install Frameworks
         run: |
-          # Install the standard Android framework (optional but recommended)
-          # java -jar apktool.jar if framework-res.apk 
-          
-          # Install your specific Samsung framework
-          java -jar apktool.jar if SamsungFirmware/1.apk
-          
-          # If you have other frameworks in that folder, install them all:
-          # for file in SamsungFirmware/*.apk; do java -jar apktool.jar if "$file"; done
+          # Verify the framework file exists before trying to install
+          if [ -f "SamsungFirmware/1.apk" ]; then
+            java -jar apktool.jar if SamsungFirmware/1.apk
+          else
+            echo "Error: SamsungFirmware/1.apk not found!"
+            exit 1
+          fi
 
       - name: Build APK
         run: |
+          # The "." refers to the current directory where the decompiled files are
           java -Xmx4g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
 
       - name: Upload Unsigned APK
