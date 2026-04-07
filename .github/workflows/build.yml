@@ -3,6 +3,8 @@ name: Build SamsungMusicPort APK
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -19,41 +21,43 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Download apktool 3.0.1
+      - name: Download Apktool 3.0.1
         run: |
+          echo "Downloading Apktool 3.0.1..."
           wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -O apktool.jar
+          chmod +x apktool.jar
+          echo "Apktool downloaded successfully"
 
-      - name: Install Samsung Framework
+      - name: Clean build artifacts
         run: |
-          # Clean existing framework cache
-          mkdir -p $HOME/.local/share/apktool/framework/
-          rm -f $HOME/.local/share/apktool/framework/*.apk
-          
-          echo "Installing Samsung framework..."
-          java -jar apktool.jar if SamsungFirmware/1.apk
+          rm -rf build/ dist/ *.apk *.keystore
+          echo "Build artifacts cleaned"
 
-      - name: Remove problematic public.xml
-        run: rm -f res/values/public.xml
-
-      - name: Build APK with apktool
+      - name: Verify apktool.yml
         run: |
-          # Find the legacy aapt binary
-          AAPT_PATH=$(find ${ANDROID_HOME}/build-tools -name aapt | head -n 1)
-          echo "Found AAPT at: $AAPT_PATH"
-          
-          # Fix the permission error by making it executable
-          sudo chmod +x "$AAPT_PATH"
-          
-          # Build using the explicit aapt binary path
-          java -Xmx2g -jar apktool.jar b -v --aapt "$AAPT_PATH" -f -o SamsungMusicPort-unsigned.apk .
+          echo "Checking apktool.yml..."
+          cat apktool.yml | head -20
+
+      - name: Build APK with Apktool (Verbose Mode)
+        run: |
+          echo "Starting APK build..."
+          java -Xmx4g -jar apktool.jar b \
+            -f \
+            -v \
+            -o SamsungMusicPort-unsigned.apk \
+            .
+          echo "APK build completed"
+          ls -lh SamsungMusicPort-unsigned.apk
+
+      - name: Check APK integrity
+        run: |
+          echo "Checking APK integrity..."
+          file SamsungMusicPort-unsigned.apk
+          unzip -t SamsungMusicPort-unsigned.apk | head -20
 
       - name: Generate debug keystore
         run: |
+          echo "Generating debug keystore..."
           keytool -genkey -v \
             -keystore debug.keystore \
             -alias androiddebugkey \
@@ -63,9 +67,11 @@ jobs:
             -storepass android \
             -keypass android \
             -dname "CN=Android Debug,O=Android,C=US"
+          echo "Keystore generated"
 
       - name: Sign APK
         run: |
+          echo "Signing APK..."
           jarsigner \
             -verbose \
             -sigalg SHA256withRSA \
@@ -74,17 +80,64 @@ jobs:
             -storepass android \
             -keypass android \
             SamsungMusicPort-unsigned.apk androiddebugkey
+          
           mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
+          echo "APK signed successfully"
+          ls -lh SamsungMusicPort-signed.apk
 
       - name: Zipalign APK
         run: |
+          echo "Zipaligning APK..."
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
             SamsungMusicPort-signed.apk \
             SamsungMusicPort.apk
+          echo "Zipalign completed"
+          ls -lh SamsungMusicPort.apk
+
+      - name: Verify final APK
+        run: |
+          echo "Verifying final APK..."
+          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -c -v 4 SamsungMusicPort.apk
+          echo "APK verification successful"
 
       - name: Upload APK as artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: SamsungMusicPort
+          name: SamsungMusicPort-signed
           path: SamsungMusicPort.apk
           retention-days: 30
+          if-no-files-found: error
+
+      - name: Create release (on main branch push)
+        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: SamsungMusicPort.apk
+          tag_name: build-${{ github.run_number }}
+          body: |
+            ## Build Information
+            - **Build Number**: ${{ github.run_number }}
+            - **Commit**: ${{ github.sha }}
+            - **Branch**: ${{ github.ref_name }}
+            - **Timestamp**: ${{ github.event.head_commit.timestamp }}
+            
+            Built with:
+            - Apktool 3.0.1
+            - Java 17 (Temurin)
+            - Ubuntu Latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Job Summary
+        if: always()
+        run: |
+          echo "## Build Job Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          if [ -f SamsungMusicPort.apk ]; then
+            SIZE=$(ls -lh SamsungMusicPort.apk | awk '{print $5}')
+            echo "- **APK Size**: $SIZE" >> $GITHUB_STEP_SUMMARY
+          fi
