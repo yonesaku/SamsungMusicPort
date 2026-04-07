@@ -1,0 +1,54 @@
+name: Build SamsungMusicPort APK - Diagnostic
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Download Apktool 3.0.1
+        run: |
+          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -O apktool.jar
+          java -jar apktool.jar --version
+
+      - name: Install Samsung Framework
+        run: |
+          mkdir -p ~/.local/share/apktool/framework
+          java -jar apktool.jar if SamsungFirmware/1.apk
+
+      - name: Remove problematic resource files
+        run: |
+          rm -f res/values/public.xml
+          rm -f res/values/ids.xml
+          rm -f res/values/attr.xml
+          rm -f res/values-mg/strings.xml
+          rm -f res/values-xh/strings.xml
+          rm -f res/values-am/strings.xml
+          rm -f res/values-hy/strings.xml
+
+      - name: Extract resources.zip and check for errors
+        run: |
+          echo "Building resources..."
+          java -Xmx4g -jar apktool.jar b -f -o test-build.apk . 2>&1 | tee full-build.log
+          
+          echo ""
+          echo "=== FULL BUILD LOG ==="
+          cat full-build.log
+
+      - name: Upload full build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-build-log
+          path: full-build.log
