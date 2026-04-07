@@ -36,17 +36,21 @@ jobs:
           # Remove any existing framework installations to ensure clean state
           rm -rf $HOME/.local/share/apktool/framework/*.apk
           
-          # Check if 1.apk exists
+          # Check if SamsungFirmware/1.apk exists
           if [ ! -f "SamsungFirmware/1.apk" ]; then
             echo "ERROR: SamsungFirmware/1.apk not found!"
+            ls -la SamsungFirmware/ || echo "SamsungFirmware directory not found"
             exit 1
           fi
           
           echo "Installing Samsung framework from SamsungFirmware/1.apk..."
-          java -jar apktool.jar if -t 1 "SamsungFirmware/1.apk"
+          java -jar apktool.jar if "SamsungFirmware/1.apk"
           
-          # Verify framework was installed
-          if [ -f "$HOME/.local/share/apktool/framework/1.apk" ]; then
+          # Verify framework was installed (it may be named 1-1.apk or 1.apk)
+          echo "Checking installed framework..."
+          ls -la $HOME/.local/share/apktool/framework/ | grep -E "\.apk$"
+          
+          if [ -f "$HOME/.local/share/apktool/framework/1.apk" ] || [ -f "$HOME/.local/share/apktool/framework/1-1.apk" ]; then
             echo "✓ Samsung framework installed successfully"
           else
             echo "ERROR: Framework installation failed!"
@@ -87,7 +91,6 @@ jobs:
           java -Xmx4g -jar apktool.jar b \
             -f \
             -v \
-            -t 1 \
             -o SamsungMusicPort-unsigned.apk \
             .
           
