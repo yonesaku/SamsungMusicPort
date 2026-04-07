@@ -3,8 +3,6 @@ name: Build SamsungMusicPort APK
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -12,288 +10,44 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Download Apktool 3.0.1
-        run: |
-          echo "Downloading Apktool 3.0.1..."
-          wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -O apktool.jar
-          chmod +x apktool.jar
-          java -jar apktool.jar --version
+      - name: Download Apktool
+        run: wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar -O apktool.jar
 
-      - name: Setup Samsung Framework
+      - name: Install Samsung Framework
         run: |
-          echo "Setting up Samsung framework..."
-          mkdir -p $HOME/.local/share/apktool/framework/
-          rm -rf $HOME/.local/share/apktool/framework/*.apk
-          
-          if [ ! -f "SamsungFirmware/1.apk" ]; then
-            echo "ERROR: SamsungFirmware/1.apk not found!"
-            exit 1
-          fi
-          
-          echo "Installing Samsung framework..."
-          java -jar apktool.jar if "SamsungFirmware/1.apk"
-          
-          if [ -f "$HOME/.local/share/apktool/framework/1.apk" ] || [ -f "$HOME/.local/share/apktool/framework/1-1.apk" ]; then
-            echo "✓ Samsung framework installed"
-          else
-            echo "ERROR: Framework installation failed!"
-            exit 1
-          fi
+          mkdir -p ~/.local/share/apktool/framework
+          java -jar apktool.jar if SamsungFirmware/1.apk
 
-      - name: Clean build artifacts
-        run: rm -rf build/ dist/ *.apk *.keystore *.jks
-
-      - name: Remove only truly problematic resource files
+      - name: Remove problematic files
         run: |
-          echo "Removing problematic resource declaration files..."
-          
-          # Remove ONLY these problematic declaration files
           rm -f res/values/public.xml
           rm -f res/values/ids.xml
           rm -f res/values/attr.xml
-          
-          # Remove from locale directories too
-          find res/values-* -name "public.xml" -delete
-          find res/values-* -name "ids.xml" -delete
-          find res/values-* -name "attr.xml" -delete
-          
-          echo "✓ Removed problematic declaration files"
 
-      - name: Fix broken resource references in arrays.xml
-        run: |
-          if [ -f "res/values/arrays.xml" ]; then
-            echo "Fixing arrays.xml..."
-            
-            # Comment out lines that reference missing dimen resources
-            sed -i 's/.*full_player_lyric_text.*/<!-- REMOVED: missing resource reference -->/g' res/values/arrays.xml
-            sed -i 's/.*full_player_volume_panel_dmr.*/<!-- REMOVED: missing resource reference -->/g' res/values/arrays.xml
-            
-            echo "✓ arrays.xml fixed"
-          fi
+      - name: Build APK
+        run: java -Xmx4g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
 
-      - name: Fix broken resource references in styles.xml
-        run: |
-          if [ -f "res/values/styles.xml" ]; then
-            echo "Fixing styles.xml..."
-            
-            # Create a backup
-            cp res/values/styles.xml res/values/styles.xml.bak
-            
-            # Use Python to parse and fix XML while maintaining structure
-            python3 << 'EOF'
-import xml.etree.ElementTree as ET
-import re
-
-try:
-    tree = ET.parse('res/values/styles.xml')
-    root = tree.getroot()
-    
-    # List of problematic resource references to remove
-    broken_resources = [
-        'basics_action_bar_title_text_209_10_8',
-        'basics_action_bar_title_sub_text_209_10_9',
-        'basics_system_background_209_4_1',
-        'full_player_volume_panel_dmr_icon_width',
-        'full_player_volume_panel_dmr_icon_height',
-        'mtrl_bottom_sheet_slide_in',
-        'mtrl_bottom_sheet_slide_out',
-        'full_player_lyric_text',
-        'full_player_volume_panel_dmr'
-    ]
-    
-    # Find and remove items that reference broken resources
-    for item in root.findall('.//item'):
-        item_text = ET.tostring(item, encoding='unicode')
-        
-        # Check if this item references any broken resource
-        should_remove = False
-        for broken in broken_resources:
-            if broken in item_text:
-                should_remove = True
-                break
-        
-        if should_remove:
-            parent = root.find('.//{*}' + item.tag + '/..', {'*': ''})
-            if parent is not None:
-                try:
-                    root.remove(item)
-                except ValueError:
-                    # Already removed
-                    pass
-    
-    # Write back
-    tree.write('res/values/styles.xml', encoding='utf-8', xml_declaration=True)
-    print("✓ styles.xml fixed")
-    
-except Exception as e:
-    print(f"Error parsing styles.xml: {e}")
-    print("Attempting text-based fix...")
-    
-    # Fallback: text-based approach
-    with open('res/values/styles.xml', 'r', encoding='utf-8') as f:
-        content = f.read()
-    
-    # Comment out lines with broken references
-    for resource in ['basics_action_bar_title_text_209_10_8', 'basics_action_bar_title_sub_text_209_10_9', 
-                     'basics_system_background_209_4_1', 'full_player_volume_panel_dmr_icon_width',
-                     'full_player_volume_panel_dmr_icon_height', 'mtrl_bottom_sheet_slide_in',
-                     'mtrl_bottom_sheet_slide_out', 'full_player_lyric_text']:
-        content = re.sub(f'.*{resource}.*', '<!-- REMOVED: missing resource -->', content)
-    
-    with open('res/values/styles.xml', 'w', encoding='utf-8') as f:
-        f.write(content)
-    
-    print("✓ styles.xml fixed with text-based approach")
-EOF
-          fi
-
-      - name: Remove broken locale strings
-        run: |
-          echo "Cleaning up broken locale strings..."
-          
-          # Remove strings that don't have default values in res/values/strings.xml
-          for locale_dir in res/values-*; do
-            if [ -f "$locale_dir/strings.xml" ]; then
-              # Comment out strings that reference missing defaults
-              sed -i 's/.*your_track_credits_will_reset_on.*/<!-- REMOVED: no default -->/g' "$locale_dir/strings.xml"
-              sed -i 's/.*your_available_track_credits_do_not_roll_over.*/<!-- REMOVED: no default -->/g' "$locale_dir/strings.xml"
-              sed -i 's/.*which_songs_do_you_like.*/<!-- REMOVED: no default -->/g' "$locale_dir/strings.xml"
-              sed -i 's/.*which_genres_do_you_like.*/<!-- REMOVED: no default -->/g' "$locale_dir/strings.xml"
-              sed -i 's/.*which_artists_do_you_like.*/<!-- REMOVED: no default -->/g' "$locale_dir/strings.xml"
-            fi
-          done
-          
-          echo "✓ Locale strings cleaned"
-
-      - name: Verify resource files
-        run: |
-          echo "Verifying critical resource files..."
-          echo "- dimens.xml: $([ -f res/values/dimens.xml ] && echo 'EXISTS' || echo 'MISSING')"
-          echo "- colors.xml: $([ -f res/values/colors.xml ] && echo 'EXISTS' || echo 'MISSING')"
-          echo "- styles.xml: $([ -f res/values/styles.xml ] && echo 'EXISTS' || echo 'MISSING')"
-          echo "- strings.xml: $([ -f res/values/strings.xml ] && echo 'EXISTS' || echo 'MISSING')"
-          echo "- public.xml: $([ -f res/values/public.xml ] && echo 'EXISTS (SHOULD BE REMOVED!)' || echo 'Correctly removed')"
-
-      - name: Build APK with Apktool
-        run: |
-          echo "Starting APK build..."
-          
-          java -Xmx4g -jar apktool.jar b \
-            -f \
-            -v \
-            -o SamsungMusicPort-unsigned.apk \
-            . 2>&1 | tee build.log
-          
-          BUILD_STATUS=${PIPESTATUS[0]}
-          
-          if [ $BUILD_STATUS -ne 0 ]; then
-            echo ""
-            echo "=== BUILD FAILED - Last 100 lines ==="
-            tail -100 build.log
-            exit $BUILD_STATUS
-          fi
-          
-          echo ""
-          echo "✓ APK build completed!"
-          ls -lh SamsungMusicPort-unsigned.apk
-
-      - name: Verify APK
-        if: success()
-        run: |
-          echo "Verifying APK..."
-          file SamsungMusicPort-unsigned.apk
-          unzip -t SamsungMusicPort-unsigned.apk > /dev/null 2>&1 && echo "✓ APK is valid" || exit 1
-
-      - name: Generate debug keystore
-        if: success()
-        run: |
-          keytool -genkey -v \
-            -keystore debug.keystore \
-            -alias androiddebugkey \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass android \
-            -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US"
+      - name: Setup keystore
+        run: keytool -genkey -v -keystore debug.keystore -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
 
       - name: Sign APK
-        if: success()
-        run: |
-          jarsigner \
-            -verbose \
-            -sigalg SHA256withRSA \
-            -digestalg SHA-256 \
-            -keystore debug.keystore \
-            -storepass android \
-            -keypass android \
-            SamsungMusicPort-unsigned.apk androiddebugkey
-          
-          mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
-          ls -lh SamsungMusicPort-signed.apk
+        run: jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore debug.keystore -storepass android -keypass android SamsungMusicPort-unsigned.apk androiddebugkey && mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
 
-      - name: Zipalign APK
-        if: success()
-        run: |
-          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
-            SamsungMusicPort-signed.apk \
-            SamsungMusicPort.apk
-          
-          ls -lh SamsungMusicPort.apk
-
-      - name: Verify final APK
-        if: success()
-        run: |
-          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -c -v 4 SamsungMusicPort.apk && echo "✓ APK properly aligned"
+      - name: Zipalign
+        run: ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 SamsungMusicPort-signed.apk SamsungMusicPort.apk
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: SamsungMusicPort-APK
           path: SamsungMusicPort.apk
           retention-days: 30
-
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
-          retention-days: 7
-
-      - name: Create Release
-        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: softprops/action-gh-release@v1
-        with:
-          files: SamsungMusicPort.apk
-          tag_name: build-${{ github.run_number }}
-          body: |
-            # SamsungMusicPort Build #${{ github.run_number }}
-            
-            - Build: ${{ github.run_number }}
-            - Commit: ${{ github.sha }}
-            - Apktool: 3.0.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Summary
-        if: always()
-        run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
-          if [ -f SamsungMusicPort.apk ]; then
-            SIZE=$(ls -lh SamsungMusicPort.apk | awk '{print $5}')
-            echo "**✓ Success!** APK Size: $SIZE" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "**✗ Failed** - Check build log" >> $GITHUB_STEP_SUMMARY
-          fi
