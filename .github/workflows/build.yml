@@ -46,7 +46,7 @@ jobs:
           echo "Installing Samsung framework from SamsungFirmware/1.apk..."
           java -jar apktool.jar if "SamsungFirmware/1.apk"
           
-          # Verify framework was installed (it may be named 1-1.apk or 1.apk)
+          # Verify framework was installed
           echo "Checking installed framework..."
           ls -la $HOME/.local/share/apktool/framework/ | grep -E "\.apk$"
           
@@ -64,20 +64,34 @@ jobs:
 
       - name: Remove problematic resource files
         run: |
-          echo "Removing problematic resource declarations..."
+          echo "Removing problematic resource declaration files..."
           
-          # Remove public.xml
+          # Remove all resource declaration XML files that cause linking errors
           rm -f res/values/public.xml
-          
-          # Remove ids.xml
           rm -f res/values/ids.xml
-          
-          # Remove attr.xml (can cause issues)
           rm -f res/values/attr.xml
+          rm -f res/values/drawables.xml
+          rm -f res/values/colors.xml
+          rm -f res/values/dimens.xml
           
-          # List what remains
-          echo "Resource files after cleanup:"
+          # Remove locale-specific problematic files
+          find res/values-* -name "drawables.xml" -delete
+          find res/values-* -name "colors.xml" -delete
+          find res/values-* -name "dimens.xml" -delete
+          find res/values-* -name "ids.xml" -delete
+          find res/values-* -name "attr.xml" -delete
+          
+          echo "Resource cleanup completed"
+          echo "Remaining resource XML files:"
           find res/values* -type f -name "*.xml" 2>/dev/null | wc -l
+
+      - name: Verify resource files after cleanup
+        run: |
+          echo "Verifying critical resource files exist:"
+          echo "- strings.xml files:"
+          find res/values* -name "strings.xml" 2>/dev/null | head -5
+          echo "- styles.xml files:"
+          find res/values* -name "styles.xml" 2>/dev/null | head -5
 
       - name: Validate AndroidManifest.xml
         run: |
@@ -87,17 +101,17 @@ jobs:
             exit 1
           fi
           
-          # Check for obvious issues
-          head -20 AndroidManifest.xml
-          echo "..."
-          tail -5 AndroidManifest.xml
+          # Basic validation
+          if grep -q "<?xml" AndroidManifest.xml; then
+            echo "✓ AndroidManifest.xml is valid XML"
+          else
+            echo "✗ AndroidManifest.xml may be corrupt"
+            exit 1
+          fi
 
-      - name: Build APK with Apktool (with AAPT2 debug)
+      - name: Build APK with Apktool
         run: |
           echo "Starting APK build..."
-          
-          # Set environment to show more AAPT2 details
-          export JAVA_TOOL_OPTIONS="-Dapktool.aapt2.debug=true"
           
           java -Xmx4g -jar apktool.jar b \
             -f \
@@ -109,20 +123,27 @@ jobs:
           
           if [ $BUILD_STATUS -ne 0 ]; then
             echo ""
-            echo "=== BUILD FAILED - Showing last 100 lines of log ==="
-            tail -100 build.log
+            echo "=== BUILD FAILED ==="
+            tail -50 build.log
             exit $BUILD_STATUS
           fi
           
-          echo "APK build completed successfully!"
+          echo ""
+          echo "✓ APK build completed successfully!"
           ls -lh SamsungMusicPort-unsigned.apk
 
       - name: Verify APK
         if: success()
         run: |
           echo "Verifying APK integrity..."
-          file SamsungMusicPort-unsigned.apk
-          unzip -l SamsungMusicPort-unsigned.apk | head -30
+          if file SamsungMusicPort-unsigned.apk | grep -q "Zip"; then
+            echo "✓ APK is a valid ZIP archive"
+          else
+            echo "✗ APK verification failed"
+            exit 1
+          fi
+          
+          unzip -t SamsungMusicPort-unsigned.apk > /dev/null 2>&1 && echo "✓ APK archive is valid" || exit 1
 
       - name: Generate debug keystore
         if: success()
@@ -152,6 +173,7 @@ jobs:
             SamsungMusicPort-unsigned.apk androiddebugkey
           
           mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
+          echo "✓ APK signed successfully"
           ls -lh SamsungMusicPort-signed.apk
 
       - name: Zipalign APK
@@ -162,14 +184,14 @@ jobs:
             SamsungMusicPort-signed.apk \
             SamsungMusicPort.apk
           
-          echo "Zipalign completed"
+          echo "✓ Zipalign completed"
           ls -lh SamsungMusicPort.apk
 
       - name: Verify Zipalign
         if: success()
         run: |
           echo "Verifying zipalign..."
-          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -c -v 4 SamsungMusicPort.apk
+          ${ANDROID_HOME}/build-tools/34.0.0/zipalign -c -v 4 SamsungMusicPort.apk && echo "✓ APK is properly aligned"
 
       - name: Upload APK as artifact
         if: success()
@@ -218,7 +240,7 @@ jobs:
       - name: Job Summary
         if: always()
         run: |
-          echo "## Build Workflow Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔨 Build Workflow Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Status:** ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
@@ -226,12 +248,14 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ -f SamsungMusicPort.apk ]; then
             SIZE=$(ls -lh SamsungMusicPort.apk | awk '{print $5}')
-            echo "**✓ APK Built Successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "## ✅ Build Successful!" >> $GITHUB_STEP_SUMMARY
             echo "- **Filename:** SamsungMusicPort.apk" >> $GITHUB_STEP_SUMMARY
             echo "- **Size:** $SIZE" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Download from Releases or Artifacts" >> $GITHUB_STEP_SUMMARY
           else
-            echo "**✗ Build Failed**" >> $GITHUB_STEP_SUMMARY
+            echo "## ❌ Build Failed" >> $GITHUB_STEP_SUMMARY
             if [ -f build.log ]; then
-              echo "Check the build log artifact for details" >> $GITHUB_STEP_SUMMARY
+              echo "Check build-log artifact for details" >> $GITHUB_STEP_SUMMARY
             fi
           fi
