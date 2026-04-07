@@ -21,9 +21,8 @@ jobs:
 
       - name: Download Apktool 3.0.1
         run: |
-          echo "Downloading Apktool 3.0.1 (fixes DEX overflow bug)..."
+          echo "Downloading Apktool 3.0.1..."
           wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.1/apktool_3.0.1.jar -O apktool.jar
-          chmod +x apktool.jar
           java -jar apktool.jar --version
 
       - name: Install Samsung Framework
@@ -37,13 +36,20 @@ jobs:
           rm -f res/values/public.xml
           rm -f res/values/ids.xml
           rm -f res/values/attr.xml
+          
+          # Remove locale-specific files that have strings missing from default strings.xml
+          echo "Removing locale files with missing string definitions..."
+          rm -f res/values-mg/strings.xml
+          rm -f res/values-xh/strings.xml
+          rm -f res/values-am/strings.xml
+          rm -f res/values-hy/strings.xml
+          
           echo "✓ Problematic files removed"
 
-      - name: Build APK with Apktool 3.0.1
+      - name: Build APK
         run: |
-          echo "Building with Apktool 3.0.1..."
+          echo "Building APK with Apktool 3.0.1..."
           java -Xmx4g -jar apktool.jar b -f -o SamsungMusicPort-unsigned.apk .
-          echo "✓ APK built successfully!"
           ls -lh SamsungMusicPort-unsigned.apk
 
       - name: Generate keystore
@@ -70,22 +76,17 @@ jobs:
             SamsungMusicPort-unsigned.apk androiddebugkey
           
           mv SamsungMusicPort-unsigned.apk SamsungMusicPort-signed.apk
-          echo "✓ APK signed"
-          ls -lh SamsungMusicPort-signed.apk
 
       - name: Zipalign APK
         run: |
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -f -v 4 \
             SamsungMusicPort-signed.apk \
             SamsungMusicPort.apk
-          
-          echo "✓ Zipalign completed"
-          ls -lh SamsungMusicPort.apk
 
       - name: Verify APK
         run: |
           ${ANDROID_HOME}/build-tools/34.0.0/zipalign -c -v 4 SamsungMusicPort.apk
-          echo "✓ APK verified and aligned properly"
+          echo "✓ APK verified successfully"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -102,21 +103,7 @@ jobs:
           tag_name: build-${{ github.run_number }}
           body: |
             # SamsungMusicPort Build #${{ github.run_number }}
-            
-            **Build Details:**
-            - Build Number: ${{ github.run_number }}
-            - Commit: ${{ github.sha }}
             - Apktool: 3.0.1
-            - Java: 17 (Temurin)
+            - Commit: ${{ github.sha }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Summary
-        if: always()
-        run: |
-          if [ -f SamsungMusicPort.apk ]; then
-            SIZE=$(ls -lh SamsungMusicPort.apk | awk '{print $5}')
-            echo "✅ BUILD SUCCESSFUL - APK Size: $SIZE" 
-          else
-            echo "❌ BUILD FAILED"
-          fi
